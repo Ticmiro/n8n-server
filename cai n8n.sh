@@ -1,11 +1,12 @@
 #!/bin/bash
 
 #------------------------------------------------------------------
-# KỊCH BẢN CÀI ĐẶT TỰ ĐỘNG HOÀN THIỆN
-# Tác giả: Ticmiro & Gemini
+# KỊCH BẢN CÀI ĐẶT TỰ ĐỘNG HOÀN CHỈNH
+# Tác giả: Ticmiro
 # Chức năng:
 # - Cài đặt n8n với PostgreSQL trên một VPS trống.
 # - Tự động hóa cài đặt Docker, Reverse Proxy và HTTPS với Caddy.
+# - Sử dụng phiên bản n8n ổn định và cấu hình múi giờ Việt Nam.
 #------------------------------------------------------------------
 
 # --- Tiện ích ---
@@ -14,11 +15,11 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-# Dừng lại ngay lập tức nếu có lỗi
+# Dừng lại ngay lập tức nếu có bất kỳ lệnh nào thất bại
 set -e
 
-echo -e "${GREEN}Chào mừng đến với kịch bản cài đặt tự động n8n!${NC}"
-echo -e "${GREEN}Tác giả: Ticmiro & Gemini${NC}"
+echo -e "${GREEN}Chào mừng đến với kịch bản cài đặt hoàn chỉnh cho n8n!${NC}"
+echo -e "${GREEN}Tác giả: Ticmiro${NC}"
 echo "------------------------------------------------------------------"
 
 # --- BƯỚC 1: HỎI THÔNG TIN NGƯỜI DÙNG ---
@@ -63,12 +64,20 @@ else
     echo -e "${GREEN}--> Docker đã được cài đặt. Bỏ qua bước này.${NC}"
 fi
 
-# --- BƯỚC 4: CẤU HÌNH TƯỜNG LỬA (UFW) ---
+# --- BƯỚC 4: CẤU HÌNH DOCKER VÀ TƯỜNG LỬA ---
+echo -e "${YELLOW}--> Cấu hình Docker để ưu tiên IPv4...${NC}"
+sudo cat > /etc/docker/daemon.json << EOF
+{
+  "ipv6": false
+}
+EOF
+sudo systemctl restart docker
+
 echo -e "${YELLOW}--> Cấu hình tường lửa UFW...${NC}"
-sudo ufw allow ssh       # Cho phép kết nối SSH (cổng 22)
-sudo ufw allow 80/tcp    # Cho phép HTTP cho Caddy
-sudo ufw allow 443/tcp   # Cho phép HTTPS cho Caddy
-sudo ufw --force enable  # Bật tường lửa mà không cần hỏi
+sudo ufw allow ssh
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw --force enable
 
 # --- BƯỚC 5: TẠO FILE CẤU HÌNH VÀ TRIỂN KHAI DOCKER ---
 INSTALL_DIR="$HOME/n8n-caddy-stack"
@@ -79,7 +88,6 @@ cd "$INSTALL_DIR"
 
 # Tạo file .env
 cat > .env << EOF
-# Thông tin đăng nhập cho PostgreSQL
 POSTGRES_USER=${POSTGRES_USER}
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 POSTGRES_DB=${POSTGRES_DB}
@@ -108,6 +116,8 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
       - caddy_config:/config
+    networks:
+      - n8n_network
 
   postgres:
     image: postgres:15
@@ -124,9 +134,12 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - n8n_network
 
   n8n:
-    image: n8nio/n8n
+    # Sử dụng phiên bản n8n ổn định
+    image: n8nio/n8n:1.45.1
     container_name: n8n_service
     restart: always
     environment:
@@ -141,17 +154,25 @@ services:
       - N8N_PROTOCOL=https
       - NODE_ENV=production
       - WEBHOOK_URL=https://${DOMAIN_NAME}/
+      # Cấu hình múi giờ GMT+7
+      - TZ=Asia/Ho_Chi_Minh
     volumes:
       - ./n8n-data:/home/node/.n8n
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - n8n_network
+
+networks:
+  n8n_network:
+    driver: bridge
 
 volumes:
-  caddy_data:
-  caddy_config:
-  postgres-data:
-  n8n-data:
+  caddy_data: {}
+  caddy_config: {}
+  postgres-data: {}
+  n8n-data: {}
 EOF
 
 echo -e "${YELLOW}--> Khởi chạy các dịch vụ (Caddy, n8n, PostgreSQL)...${NC}"
