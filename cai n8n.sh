@@ -2,11 +2,10 @@
 
 #------------------------------------------------------------------
 # KỊCH BẢN CÀI ĐẶT TỰ ĐỘNG HOÀN THIỆN
-# Tác giả: Ticmiro
+# Tác giả: Ticmiro & Gemini
 # Chức năng:
-# - Cài đặt n8n với PostgreSQL.
-# - Tự động hóa cài đặt Nginx Reverse Proxy.
-# - Tự động hóa cấu hình HTTPS với Let's Encrypt.
+# - Cài đặt n8n với PostgreSQL trên một VPS trống.
+# - Tự động hóa cài đặt Docker, Reverse Proxy và HTTPS với Caddy.
 #------------------------------------------------------------------
 
 # --- Tiện ích ---
@@ -18,11 +17,11 @@ NC='\033[0m'
 # Dừng lại ngay lập tức nếu có lỗi
 set -e
 
-echo -e "${GREEN}Chào mừng đến với kịch bản cài đặt n8n!${NC}"
-echo -e "${GREEN}Tác giả: Ticmiro  ${NC}"
+echo -e "${GREEN}Chào mừng đến với kịch bản cài đặt tự động n8n!${NC}"
+echo -e "${GREEN}Tác giả: Ticmiro & Gemini${NC}"
 echo "------------------------------------------------------------------"
 
-# --- 1. THU THẬP CÁC THÔNG TIN CẤU HÌNH ---
+# --- BƯỚC 1: HỎI THÔNG TIN NGƯỜI DÙNG ---
 echo -e "${YELLOW}Vui lòng cung cấp các thông tin cấu hình cần thiết:${NC}"
 
 read -p "Nhập tên miền bạn sẽ sử dụng cho n8n (ví dụ: n8n.yourdomain.com): " DOMAIN_NAME
@@ -32,7 +31,6 @@ read -s -p "Nhập mật khẩu cho PostgreSQL User: " POSTGRES_PASSWORD
 echo
 read -p "Nhập tên cho PostgreSQL Database (ví dụ: n8n_db): " POSTGRES_DB
 
-# Kiểm tra xem người dùng đã nhập thông tin chưa
 if [ -z "$DOMAIN_NAME" ] || [ -z "$EMAIL_ADDRESS" ] || [ -z "$POSTGRES_USER" ] || [ -z "$POSTGRES_PASSWORD" ] || [ -z "$POSTGRES_DB" ]; then
   echo -e "${RED}Lỗi: Tất cả các trường thông tin không được để trống.${NC}"
   exit 1
@@ -42,23 +40,42 @@ echo ""
 echo "--- Cấu hình sẽ được cài đặt cho tên miền: $DOMAIN_NAME ---"
 echo ""
 
-# --- 2. CÀI ĐẶT CÁC GÓI HỆ THỐNG CẦN THIẾT ---
-echo -e "${YELLOW}--> Cập nhật hệ thống và cài đặt Nginx, Certbot...${NC}"
+# --- BƯỚC 2: CÀI ĐẶT CÁC GÓI HỆ THỐNG CẦN THIẾT ---
+echo -e "${YELLOW}--> Cập nhật hệ thống và cài đặt các gói cơ bản...${NC}"
 sudo apt-get update
-sudo apt-get install -y nginx certbot python3-certbot-nginx git
+sudo apt-get install -y ca-certificates curl git
 
-# --- 3. CẤU HÌNH TƯỜNG LỬA (UFW) ---
+# --- BƯỚC 3: KIỂM TRA VÀ CÀI ĐẶT DOCKER ---
+if ! command -v docker &> /dev/null
+then
+    echo -e "${YELLOW}--> Docker chưa được cài đặt. Bắt đầu cài đặt Docker...${NC}"
+    sudo install -m 0755 -d /etc/apt/keyrings
+    sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+    sudo chmod a+r /etc/apt/keyrings/docker.asc
+    echo \
+      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+      $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+      sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+    sudo apt-get update
+    sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    echo -e "${GREEN}--> Cài đặt Docker hoàn tất.${NC}"
+else
+    echo -e "${GREEN}--> Docker đã được cài đặt. Bỏ qua bước này.${NC}"
+fi
+
+# --- BƯỚC 4: CẤU HÌNH TƯỜNG LỬA (UFW) ---
 echo -e "${YELLOW}--> Cấu hình tường lửa UFW...${NC}"
 sudo ufw allow ssh       # Cho phép kết nối SSH (cổng 22)
-sudo ufw allow 'Nginx Full' # Cho phép kết nối HTTP (80) và HTTPS (443)
+sudo ufw allow 80/tcp    # Cho phép HTTP cho Caddy
+sudo ufw allow 443/tcp   # Cho phép HTTPS cho Caddy
 sudo ufw --force enable  # Bật tường lửa mà không cần hỏi
 
-# --- 4. TẠO FILE CẤU HÌNH VÀ CÀI ĐẶT DOCKER ---
-N8N_DIR="$HOME/.n8n-postgres"
-echo -e "${YELLOW}--> Tạo các file cấu hình tại ${N8N_DIR}...${NC}"
+# --- BƯỚC 5: TẠO FILE CẤU HÌNH VÀ TRIỂN KHAI DOCKER ---
+INSTALL_DIR="$HOME/n8n-caddy-stack"
+echo -e "${YELLOW}--> Tạo các file cấu hình tại ${INSTALL_DIR}...${NC}"
 
-mkdir -p "$N8N_DIR"
-cd "$N8N_DIR"
+mkdir -p "$INSTALL_DIR"
+cd "$INSTALL_DIR"
 
 # Tạo file .env
 cat > .env << EOF
@@ -68,11 +85,30 @@ POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 POSTGRES_DB=${POSTGRES_DB}
 EOF
 
+# Tạo file Caddyfile
+cat > Caddyfile << EOF
+${DOMAIN_NAME} {
+    reverse_proxy n8n:5678
+}
+EOF
+
 # Tạo file docker-compose.yml
 cat > docker-compose.yml << EOF
 version: '3.7'
 
 services:
+  caddy:
+    image: caddy:latest
+    container_name: caddy_reverse_proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+
   postgres:
     image: postgres:15
     container_name: n8n_postgres_db
@@ -93,8 +129,6 @@ services:
     image: n8nio/n8n
     container_name: n8n_service
     restart: always
-    ports:
-      - "127.0.0.1:5678:5678"
     environment:
       - DB_TYPE=postgresdb
       - DB_POSTGRESDB_HOST=postgres
@@ -112,47 +146,25 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+volumes:
+  caddy_data:
+  caddy_config:
+  postgres-data:
+  n8n-data:
 EOF
 
-echo -e "${YELLOW}--> Khởi chạy n8n và PostgreSQL...${NC}"
+echo -e "${YELLOW}--> Khởi chạy các dịch vụ (Caddy, n8n, PostgreSQL)...${NC}"
 sudo docker compose up -d
 
-# --- 5. CẤU HÌNH NGINX VÀ LẤY CHỨNG CHỈ SSL ---
-echo -e "${YELLOW}--> Cấu hình Nginx và tự động lấy chứng chỉ SSL...${NC}"
-
-# Tạo file cấu hình Nginx ban đầu (chỉ HTTP)
-sudo cat > /etc/nginx/sites-available/$DOMAIN_NAME << EOF
-server {
-    listen 80;
-    server_name $DOMAIN_NAME;
-    location / {
-        proxy_pass http://localhost:5678;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
-}
-EOF
-
-# Kích hoạt cấu hình Nginx
-sudo ln -sfn /etc/nginx/sites-available/$DOMAIN_NAME /etc/nginx/sites-enabled/$DOMAIN_NAME
-sudo nginx -t
-sudo systemctl restart nginx
-
-# Chạy Certbot ở chế độ không tương tác
-sudo certbot --nginx -d "$DOMAIN_NAME" --non-interactive --agree-tos -m "$EMAIL_ADDRESS" --redirect
-
-# --- 6. HOÀN TẤT ---
+# --- BƯỚC 6: HOÀN TẤT ---
 echo "=================================================================="
 echo -e "${GREEN}🚀 CÀI ĐẶT HOÀN TẤT! 🚀${NC}"
 echo "=================================================================="
 echo ""
+echo "Caddy sẽ tự động lấy và cấu hình SSL cho bạn trong vài phút tới."
 echo "Bạn có thể truy cập n8n ngay bây giờ tại: ${GREEN}https://${DOMAIN_NAME}${NC}"
-echo "Thông tin database của bạn đã được lưu trong file: ${GREEN}${N8N_DIR}/.env${NC}"
+echo "Thông tin database của bạn đã được lưu trong file: ${GREEN}${INSTALL_DIR}/.env${NC}"
 echo ""
-echo "Để xem log của hệ thống, chạy lệnh: ${YELLOW}cd ${N8N_DIR} && sudo docker compose logs -f${NC}"
+echo "Để xem log của hệ thống, chạy lệnh: ${YELLOW}cd ${INSTALL_DIR} && sudo docker compose logs -f${NC}"
 echo "=================================================================="
