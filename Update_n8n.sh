@@ -2,7 +2,7 @@
 
 #------------------------------------------------------------------
 # KỊCH BẢN CẬP NHẬT TỰ ĐỘNG N8N
-# Tác giả: Ticmiro & Gemini
+# Tác giả: Ticmiro
 # Chức năng:
 # - Tự động cập nhật n8n lên phiên bản mới nhất cho một cài đặt
 #   sử dụng Docker Compose.
