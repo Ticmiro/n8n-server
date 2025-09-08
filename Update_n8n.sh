@@ -38,31 +38,42 @@ echo "--> Tạo bản sao lưu cho docker-compose.yml..."
 cp docker-compose.yml docker-compose.yml.bak-$(date +%Y%m%d_%H%M%S)
 echo -e "${GREEN}Sao lưu thành công.${NC}"
 
-# --- BƯỚC 3: CẬP NHẬT IMAGE LÊN PHIÊN BẢN MỚI NHẤT ---
+# --- BƯỚC 3: KIỂM TRA VÀ THÊM VOLUME MAPPING ---
+# Kiểm tra xem volume mapping đã tồn tại chưa
+if ! grep -q "volumes:" docker-compose.yml; then
+    echo -e "${RED}Lỗi: Không tìm thấy 'volumes' trong docker-compose.yml. Dữ liệu của bạn có thể bị mất.${NC}"
+    echo "Tự động thêm cấu hình volumes để bảo vệ dữ liệu."
+    # Thêm volume mapping.
+    # Thư mục /n8n_data sẽ được tạo trên máy chủ của bạn để lưu trữ dữ liệu.
+    sed -i '/n8n:/a\ \ \ \ \ \ \ \ volumes:\n\ \ \ \ \ \ \ \ \ \ - \/root\/n8n_data:\/home\/node\/.n8n' docker-compose.yml
+    echo -e "${GREEN}Đã thêm volumes mapping thành công.${NC}"
+fi
+
+# --- BƯỚC 4: CẬP NHẬT IMAGE LÊN PHIÊN BẢN MỚI NHẤT ---
 echo "--> Cập nhật image n8n thành 'latest' trong docker-compose.yml..."
 # Lệnh sed này sẽ tìm dòng chứa 'image: n8nio/n8n' và thay thế tag phiên bản thành 'latest'
 sed -i 's|image: n8nio/n8n:.*|image: n8nio/n8n:latest|g' docker-compose.yml
 echo -e "${GREEN}Cập nhật file cấu hình thành công.${NC}"
 
-# --- BƯỚC 4: TẢI VỀ VÀ KHỞI ĐỘNG LẠI ---
+# --- BƯỚC 5: TẢI VỀ VÀ KHỞI ĐỘNG LẠI ---
 echo -e "${YELLOW}--> Tải về phiên bản n8n mới nhất... (Thao tác này có thể mất vài phút)${NC}"
 sudo docker compose pull n8n
 
 echo -e "${YELLOW}--> Dừng container cũ và khởi động container mới...${NC}"
 sudo docker compose up -d
 
-# --- BƯỚC 5: DỌN DẸP ---
+# --- BƯỚC 6: DỌN DẸP ---
 echo "--> Dọn dẹp các image n8n cũ không còn được sử dụng..."
 sudo docker image prune -f
 echo -e "${GREEN}Dọn dẹp hoàn tất.${NC}"
 
-# --- BƯỚC 6: HOÀN TẤT ---
+# --- BƯỚC 7: HOÀN TẤT ---
 echo "=================================================================="
 echo -e "${GREEN}🚀 CẬP NHẬT HOÀN TẤT! 🚀${NC}"
 echo "=================================================================="
 echo ""
 echo "n8n đã được cập nhật thành công lên phiên bản mới nhất."
-echo "Toàn bộ dữ liệu (workflows, credentials, executions) của bạn đã được bảo toàn."
+echo "Dữ liệu (workflows, credentials, executions) của bạn đã được bảo toàn."
 echo ""
 echo "Để kiểm tra phiên bản mới, hãy truy cập vào n8n và xem ở góc dưới bên trái."
 echo "=================================================================="
