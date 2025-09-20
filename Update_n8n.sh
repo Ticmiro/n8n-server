@@ -38,13 +38,12 @@ echo "--> Tạo bản sao lưu cho docker-compose.yml..."
 cp docker-compose.yml docker-compose.yml.bak-$(date +%Y%m%d_%H%M%S)
 echo -e "${GREEN}Sao lưu thành công.${NC}"
 
-# --- BƯỚC 3: KIỂM TRA VÀ THÊM VOLUME MAPPING ---
-# Kiểm tra xem volume mapping đã tồn tại chưa
-if ! grep -q "volumes:" docker-compose.yml; then
-    echo -e "${RED}Lỗi: Không tìm thấy 'volumes' trong docker-compose.yml. Dữ liệu của bạn có thể bị mất.${NC}"
+# --- BƯỚC 3: KIỂM TRA VÀ THÊM VOLUME MAPPING CHO N8N ---
+# Kiểm tra xem n8n service đã có volume mapping đúng chưa
+if ! grep -q "volumes:" docker-compose.yml || ! grep -q "volumes:\n.*-.*.n8n" docker-compose.yml; then
+    echo -e "${RED}Lỗi: Có thể thiếu 'volumes' mapping cho n8n. Dữ liệu của bạn có thể bị mất.${NC}"
     echo "Tự động thêm cấu hình volumes để bảo vệ dữ liệu."
-    # Thêm volume mapping.
-    # Thư mục /n8n_data sẽ được tạo trên máy chủ của bạn để lưu trữ dữ liệu.
+    # Thêm volume mapping. Thư mục /root/n8n_data sẽ được tạo trên máy chủ
     sed -i '/n8n:/a\ \ \ \ \ \ \ \ volumes:\n\ \ \ \ \ \ \ \ \ \ - \/root\/n8n_data:\/home\/node\/.n8n' docker-compose.yml
     echo -e "${GREEN}Đã thêm volumes mapping thành công.${NC}"
 fi
