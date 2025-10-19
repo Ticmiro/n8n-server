@@ -1,4 +1,4 @@
-bash <(curl -sL ) n8n sqliffe\
+bash <(curl -sL https://raw.githubusercontent.com/Ticmiro/n8n-server/refs/heads/main/cai%20n8n%20c%C3%B3%20tao%20key.sh) n8n sqliffe\
 
 bash <(curl -sL https://raw.githubusercontent.com/Ticmiro/n8n-server/refs/heads/main/FULL%20DCIH%20VU%2014-09-25.sh) thu vien dich vu \
 bash <(curl -sL https://raw.githubusercontent.com/Ticmiro/n8n-server/refs/heads/main/cai%20n8n%20an%20toan%20bao%20mat.sh) có key để backup \
