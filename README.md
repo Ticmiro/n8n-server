@@ -1,6 +1,5 @@
-bash <(curl -sL https://raw.githubusercontent.com/Ticmiro/n8n-server/refs/heads/main/n8n_setup_lates.sh) n8n sqliffe\
-(curl -sL https://raw.githubusercontent.com/Ticmiro/n8n-server/refs/heads/main/cai%20n8naws.sh | sed 's/\r//' | bash) copy lệnh trong dấu () AWS n8n possgrest \
-(curl -sL https://raw.githubusercontent.com/Ticmiro/n8n-server/refs/heads/main/update%20n8n%20sqlife.sh | sed 's/\r//' | bash) update n8n copy lệnh trong dấu () \
+bash <(curl -sL ) n8n sqliffe\
+
 bash <(curl -sL https://raw.githubusercontent.com/Ticmiro/n8n-server/refs/heads/main/FULL%20DCIH%20VU%2014-09-25.sh) thu vien dich vu \
 bash <(curl -sL https://raw.githubusercontent.com/Ticmiro/n8n-server/refs/heads/main/cai%20n8n%20an%20toan%20bao%20mat.sh) có key để backup \
 # chuẩn bị các thông tin sau khi được hỏi: \
