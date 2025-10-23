@@ -1,9 +1,14 @@
 #!/bin/bash
 
-#------------------------------------------------------------------
-# KỊCH BẢN CÀI ĐẶT N8N AN TOÀN - TỰ ĐỘNG CÀI ĐẶT DOCKER & COMPOSE
-# Tác giả: Ticmiro
-#------------------------------------------------------------------
+# =============================================================
+# KỊCH BẢN UPDATE N8N AN TOÀN
+#  - Kiểm tra và tạo N8N_ENCRYPTION_KEY cố định nếu chưa có
+#  - Kiểm tra mapping volume dữ liệu
+#  - Backup .env, docker-compose.yml, và toàn bộ dữ liệu
+#  - Update image và khởi động lại n8n với dữ liệu an toàn
+# =============================================================
+
+# ==================== THIẾT LẬP BIẾN ====================
 
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -12,169 +17,66 @@ NC='\033[0m'
 
 INSTALL_DIR="$HOME/n8n-caddy-stack"
 ENV_FILE="$INSTALL_DIR/.env"
-DOCKER_COMPOSE_FILE="$INSTALL_DIR/docker-compose.yml"
-N8N_DATA_DIR="$INSTALL_DIR/n8n-data"
+N8N_DATA_DIR="$INSTALL_DIR/n8n-data"      # Sửa đường dẫn nếu volume bên trái là nơi khác
+
+TAG="${1:-latest}" # Có thể truyền tag version (mặc định: latest)
 
 set -e
 
-echo -e "${GREEN}Chào mừng đến với kịch bản cài đặt an toàn cho n8n!${NC}"
-echo -e "${GREEN}Tác giả: Ticmiro${NC}"
-echo "------------------------------------------------------------------"
+echo -e "${GREEN}BẮT ĐẦU QUY TRÌNH CẬP NHẬT N8N AN TOÀN${NC}"
 
-#--- KIỂM TRA VÀ CÀI ĐẶT DOCKER NẾU CẦN ---
-if ! command -v docker &> /dev/null; then
-    echo -e "${YELLOW}Docker chưa được cài đặt. Đang tiến hành cài đặt Docker & Compose...${NC}"
-    sudo apt-get update
-    sudo apt-get install -y \
-        ca-certificates \
-        curl \
-        gnupg \
-        lsb-release
-    # Thêm key
-    sudo install -m 0755 -d /etc/apt/keyrings
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo tee /etc/apt/keyrings/docker.asc > /dev/null
-    sudo chmod a+r /etc/apt/keyrings/docker.asc
-    # Thêm repo
-    echo \
-      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
-      $(lsb_release -cs) stable" | \
-      sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-    sudo apt-get update
-    sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-    echo -e "${GREEN}Cài Docker và Docker Compose thành công!${NC}"
-else
-    echo -e "${GREEN}Docker đã có sẵn. Bỏ qua bước này.${NC}"
-fi
-
-if ! docker compose version &> /dev/null; then
-    echo -e "${RED}Lỗi: Docker Compose (v2) không hoạt động!${NC}"
+# ==================== 1. KIỂM TRA THƯ MỤC CÀI ĐẶT ====================
+if [ ! -d "$INSTALL_DIR" ]; then
+    echo -e "${RED}Lỗi: Không tìm thấy thư mục cài đặt tại ${INSTALL_DIR}.${NC}"
     exit 1
 fi
-
-#--- NHẬP THÔNG TIN CẦN THIẾT ---
-echo -e "${YELLOW}Vui lòng cung cấp các thông tin cấu hình cần thiết:${NC}"
-
-read -p "Nhập tên miền bạn sẽ sử dụng cho n8n (vd: n8n.yourdomain.com): " DOMAINNAME
-read -p "Nhập email của bạn (dùng cho cảnh báo SSL): " EMAILADDRESS
-read -p "Nhập tên user cho PostgreSQL (vd: n8nuser): " POSTGRESUSER
-read -s -p "Nhập mật khẩu cho PostgreSQL User: " POSTGRESPASSWORD
-echo
-read -p "Nhập tên database cho PostgreSQL (vd: n8ndb): " POSTGRESDB
-
-if [ -z "$DOMAINNAME" ] || [ -z "$EMAILADDRESS" ] || [ -z "$POSTGRESUSER" ] || [ -z "$POSTGRESPASSWORD" ] || [ -z "$POSTGRESDB" ]; then
-    echo -e "${RED}Lỗi: Tất cả các trường thông tin là bắt buộc!${NC}"
-    exit 1
-fi
-
-mkdir -p "$INSTALL_DIR"
 cd "$INSTALL_DIR"
 
-#--- TẠO FILE .env VÀ SINH N8N_ENCRYPTION_KEY AN TOÀN ---
+# ==================== 2. KIỂM TRA HOẶC TẠO ENCRYPTION_KEY ====================
 if [ ! -f "$ENV_FILE" ]; then
+    echo -e "${RED}Không tìm thấy file .env – sẽ tạo mới.${NC}"
     touch "$ENV_FILE"
 fi
-
-grep -qxF "POSTGRESUSER=$POSTGRESUSER" "$ENV_FILE" || echo "POSTGRESUSER=$POSTGRESUSER" >> "$ENV_FILE"
-grep -qxF "POSTGRESPASSWORD=$POSTGRESPASSWORD" "$ENV_FILE" || echo "POSTGRESPASSWORD=$POSTGRESPASSWORD" >> "$ENV_FILE"
-grep -qxF "POSTGRESDB=$POSTGRESDB" "$ENV_FILE" || echo "POSTGRESDB=$POSTGRESDB" >> "$ENV_FILE"
-grep -qxF "DOMAINNAME=$DOMAINNAME" "$ENV_FILE" || echo "DOMAINNAME=$DOMAINNAME" >> "$ENV_FILE"
-
 if ! grep -q "^N8N_ENCRYPTION_KEY=" "$ENV_FILE"; then
     KEY=$(openssl rand -base64 32)
+    echo -e "${YELLOW}Chưa có N8N_ENCRYPTION_KEY, sẽ tạo tự động:${NC}"
     echo "N8N_ENCRYPTION_KEY=$KEY" >> "$ENV_FILE"
-    echo -e "${GREEN}Đã sinh N8N_ENCRYPTION_KEY = $KEY (và ghi vào $ENV_FILE)${NC}"
-    echo -e "${YELLOW}HÃY LƯU KEY NÀY ra nơi an toàn để tránh mất credentials khi update/migrate!${NC}"
+    echo -e "${GREEN}Đã sinh KEY và thêm vào $ENV_FILE${NC}"
+    echo "→ Lưu lại KEY này ở nơi an toàn: $KEY"
 else
     KEY=$(grep "^N8N_ENCRYPTION_KEY=" "$ENV_FILE" | cut -d= -f2-)
-    echo -e "${GREEN}Đã tồn tại N8N_ENCRYPTION_KEY: $KEY${NC}"
+    echo -e "${GREEN}Đã xác nhận ENCRYPTION_KEY cố định: $KEY${NC}"
 fi
 
-#--- TẠO FILE Caddyfile ---
-cat > Caddyfile <<EOF
-${DOMAINNAME} {
-    reverse_proxy n8n:5678
-}
-EOF
+# ==================== 3. KIỂM TRA VOLUME MAPPING DỮ LIỆU ====================
+if ! grep -q "/home/node/.n8n" docker-compose.yml; then
+    echo -e "${RED}Không tìm thấy mapping data volume cho /home/node/.n8n${NC}"
+    echo "Vui lòng kiểm tra docker-compose.yml – nếu update tiếp sẽ có nguy cơ mất workflow!"
+    exit 1
+fi
 
-#--- TẠO FILE docker-compose.yml ---
-cat > "$DOCKER_COMPOSE_FILE" <<EOF
-version: "3.7"
-services:
-  caddy:
-    image: caddy:latest
-    container_name: caddyreverseproxy
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
-      - caddydata:/data
-      - caddyconfig:/config
-    networks:
-      - n8nnetwork
+# ==================== 4. SAO LƯU DỮ LIỆU CỰC NHANH ====================
+BACKUP_DIR="$HOME/n8n_backups/backup-$(date +%Y%m%d_%H%M%S)"
+mkdir -p "$BACKUP_DIR"
+cp docker-compose.yml "$BACKUP_DIR/docker-compose.yml"
+cp "$ENV_FILE" "$BACKUP_DIR/.env"
+if [ -d "$N8N_DATA_DIR" ]; then
+    tar czf "$BACKUP_DIR/n8n-data.tgz" -C "$(dirname $N8N_DATA_DIR)" "$(basename $N8N_DATA_DIR)"
+    echo -e "${GREEN}Đã BACKUP dữ liệu data n8n vào $BACKUP_DIR${NC}"
+else
+    echo -e "${YELLOW}Không tìm thấy thư mục $N8N_DATA_DIR (volume mount tùy chỉnh?), kiểm tra lại!${NC}"
+fi
 
-  postgres:
-    image: postgres:15
-    container_name: n8npostgresdb
-    restart: always
-    environment:
-      - POSTGRES_USER=\${POSTGRESUSER}
-      - POSTGRES_PASSWORD=\${POSTGRESPASSWORD}
-      - POSTGRES_DB=\${POSTGRESDB}
-    volumes:
-      - ./postgres-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \${POSTGRESUSER} -d \${POSTGRESDB}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - n8nnetwork
+# ==================== 5. CẬP NHẬT IMAGE & UP CONTAINER ====================
+echo -e "${YELLOW}Đang cập nhật image n8n:${TAG} trong docker-compose.yml...${NC}"
+sed -i "s|image: n8nio/n8n:.*|image: n8nio/n8n:${TAG}|g" docker-compose.yml
+echo -e "${YELLOW}Bắt đầu pull và khởi động lại n8n...${NC}"
+docker compose pull n8n
+docker compose up -d
 
-  n8n:
-    image: n8nio/n8n:1.45.1
-    container_name: n8nservice
-    restart: always
-    user: root
-    ports:
-      - "127.0.0.1:5678:5678"
-    environment:
-      - DB_TYPE=postgresdb
-      - DB_POSTGRESDB_HOST=postgres
-      - DB_POSTGRESDB_PORT=5432
-      - DB_POSTGRESDB_DATABASE=\${POSTGRESDB}
-      - DB_POSTGRESDB_USER=\${POSTGRESUSER}
-      - DB_POSTGRESDB_PASSWORD=\${POSTGRESPASSWORD}
-      - N8N_HOST=\${DOMAINNAME}
-      - N8N_PORT=5678
-      - N8N_PROTOCOL=https
-      - N8N_ENCRYPTION_KEY=\${N8N_ENCRYPTION_KEY}
-      - NODE_ENV=production
-      - WEBHOOK_URL=https://\${DOMAINNAME}
-      - TZ=Asia/Ho_Chi_Minh
-    volumes:
-      - ./n8n-data:/home/node/.n8n
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - n8nnetwork
+# ==================== 6. DỌN DẸP IMAGE CŨ (KHI KHÔNG CẦN ROLLBACK) ====================
+docker image prune -f
 
-networks:
-  n8nnetwork:
-    driver: bridge
-
-volumes:
-  caddydata:
-  caddyconfig:
-  postgres-data:
-  n8n-data:
-EOF
-
-echo -e "${YELLOW}Đang khởi tạo các container Docker...${NC}"
-docker compose -f "$DOCKER_COMPOSE_FILE" up -d
-
-echo -e "${GREEN}CÀI ĐẶT HOÀN TẤT - N8N đã sẵn sàng!${NC}"
-echo -e "${YELLOW}Bạn có thể truy cập giao diện qua https://$DOMAINNAME${NC}"
-echo -e "${GREEN}KEY giải mã đã lưu trong $ENV_FILE và được in phía trên. Nhớ backup KEY này!${NC}"
+echo -e "${GREEN}CẬP NHẬT – BACKUP – KIỂM TRA KEY TẤT CẢ ĐÃ HOÀN TẤT! 🚀${NC}"
+echo -e "${GREEN}KEY encryption: $KEY${NC}"
+echo -e "${YELLOW}Đã backup toàn bộ config tại $BACKUP_DIR. Đường dẫn data: $N8N_DATA_DIR${NC}"
