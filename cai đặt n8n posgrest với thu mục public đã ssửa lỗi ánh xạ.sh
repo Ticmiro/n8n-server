@@ -2,7 +2,7 @@
 
 #------------------------------------------------------------------
 # KỊCH BẢN CÀI ĐẶT TỰ ĐỘNG HOÀN CHỈNH (v5.1 - Đã thêm Volume cho n8n)
-# Tác giả: Ticmiro & Gemini
+# Tác giả: Ticmiro
 # Chức năng:
 # - Cài đặt Docker Compose v2 (plugin, có dấu cách) để
 #   khắc phục triệt để lỗi 'KeyError: ContainerConfig'.
