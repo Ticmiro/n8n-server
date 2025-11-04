@@ -2,7 +2,7 @@
 
 #------------------------------------------------------------------
 # KỊCH BẢN UPDATE & BACKUP N8N (TƯƠNG THÍCH VỚI KỊCH BẢN v5)
-# Tác giả: Ticmiro & Gemini
+# Tác giả: Ticmiro
 # Chức năng:
 # - Tương thích với Docker Compose v2 (có dấu cách).
 # - Tự động đọc cấu hình từ .env.
